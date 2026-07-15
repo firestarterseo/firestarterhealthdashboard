@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "../../../../lib/supabase/admin";
 import { analyzeStatus } from "../../../../lib/metrics";
+import { sendAlertDigestEmail } from "../../../../lib/email";
 
 export async function GET() {
   let supabase;
@@ -42,6 +43,7 @@ export async function GET() {
 
     alertsToInsert.push({
       account_id: acc.id,
+      account_name: acc.name,
       severity: status,
       reason: reason || status,
       metric_snapshot: rows.slice(-7),
@@ -49,12 +51,33 @@ export async function GET() {
     });
   }
 
-  if (alertsToInsert.length) {
-    const { error: insertError } = await supabase.from("alerts_log").insert(alertsToInsert);
-    if (insertError) {
-      return NextResponse.json({ ok: false, error: insertError.message }, { status: 500 });
-    }
+  if (!alertsToInsert.length) {
+    return NextResponse.json({ ok: true, flagged: 0 });
   }
 
-  return NextResponse.json({ ok: true, flagged: alertsToInsert.length });
+  // Send the email digest first, so we know whether to record "email" in notified_channels.
+  let emailResult = { sent: false, reason: "not attempted" };
+  try {
+    emailResult = await sendAlertDigestEmail(
+      alertsToInsert.map((a) => ({ name: a.account_name, severity: a.severity, reason: a.reason }))
+    );
+  } catch (err) {
+    emailResult = { sent: false, reason: err.message };
+  }
+
+  const rowsForInsert = alertsToInsert.map(({ account_name, ...rest }) => ({
+    ...rest,
+    notified_channels: emailResult.sent ? ["email"] : [],
+  }));
+
+  const { error: insertError } = await supabase.from("alerts_log").insert(rowsForInsert);
+  if (insertError) {
+    return NextResponse.json({ ok: false, error: insertError.message }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    ok: true,
+    flagged: alertsToInsert.length,
+    email: emailResult,
+  });
 }
