@@ -59,7 +59,7 @@ export default async function DashboardPage() {
   return (
     <div className="page">
       <div className="brand-bar">
-        <img src="/logo.webp" alt="Firestarter SEO" className="brand-logo" />
+        <img src="/firestarter-logo.webp" alt="Firestarter SEO" className="brand-logo" />
         <span className="brand-tagline">Account Health Dashboard</span>
         <span className="spacer" />
         <SignOutButton />
