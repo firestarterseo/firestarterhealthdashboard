@@ -14,9 +14,14 @@ import { fetchDailyCallMetrics, fetchDailyFormMetrics } from "../../../../lib/ca
 //
 // Runs nightly via vercel.json (small window, catches late-arriving data), and can be triggered
 // manually with a larger ?days= window for backfills, e.g. /api/cron/sync-metrics?days=45.
+//
+// Pass ?accountId=<uuid> to sync just one account instead of all of them — used right after a
+// new account is created (see components/NewAccountForm.js) so its first week of data shows up
+// immediately instead of waiting for tomorrow's nightly run.
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const days = Math.min(Math.max(Number(searchParams.get("days")) || 4, 1), 90);
+  const onlyAccountId = searchParams.get("accountId");
 
   const isoDate = (d) => d.toISOString().slice(0, 10);
   const end = new Date();
@@ -32,9 +37,16 @@ export async function GET(request) {
     return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
   }
 
-  const { data: accounts, error: accountsError } = await admin.from("accounts").select("*");
+  let accountsQuery = admin.from("accounts").select("*");
+  if (onlyAccountId) {
+    accountsQuery = accountsQuery.eq("id", onlyAccountId);
+  }
+  const { data: accounts, error: accountsError } = await accountsQuery;
   if (accountsError) {
     return NextResponse.json({ ok: false, error: accountsError.message }, { status: 500 });
+  }
+  if (onlyAccountId && !accounts?.length) {
+    return NextResponse.json({ ok: false, error: "Account not found." }, { status: 404 });
   }
 
   const { data: googleConnections, error: gcError } = await admin

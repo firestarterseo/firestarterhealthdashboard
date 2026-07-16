@@ -273,6 +273,11 @@ export default function NewAccountForm({ initialAccount } = {}) {
       return;
     }
 
+    // Pull this account's first week of data right away rather than waiting for tomorrow's
+    // nightly sync — fire-and-forget so a slow GA4/GSC/CallRail response doesn't block the
+    // redirect; the account page will just show empty tiles until it lands a moment later.
+    fetch(`/api/cron/sync-metrics?accountId=${data.id}&days=7`).catch(() => {});
+
     router.push(`/account/${data.id}`);
     router.refresh();
   }
