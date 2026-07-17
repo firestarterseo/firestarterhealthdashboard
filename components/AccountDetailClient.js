@@ -8,7 +8,7 @@ import {
   METRIC_DB_COLUMN,
   TILE_GROUPS,
   VIS_PLATFORM_DEFS,
-  buildCompareRows,
+  buildCompareRowsForRange,
   fmtNum,
   fmtDate,
   aggregateVisibilityWeekly,
@@ -65,12 +65,56 @@ export default function AccountDetailClient({ account, metricsRows, visibilityRo
   const [tab, setTab] = useState("overview");
   const [selectedMetric, setSelectedMetric] = useState("sessions");
   const [selectedVisMetric, setSelectedVisMetric] = useState("organic");
-  const [period, setPeriod] = useState(30);
+
+  const [preset, setPreset] = useState("30");
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerRef = useRef(null);
+  const earliestDate = metricsRows.length ? metricsRows[0].date : null;
+  const latestDate = metricsRows.length ? metricsRows[metricsRows.length - 1].date : null;
+  const [customStart, setCustomStart] = useState(latestDate);
+  const [customEnd, setCustomEnd] = useState(latestDate);
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target)) {
+        setPickerOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  function shiftIso(dateStr, days) {
+    const d = new Date(`${dateStr}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.toISOString().slice(0, 10);
+  }
+
+  const { rangeStart, rangeEnd } = useMemo(() => {
+    if (!latestDate) return { rangeStart: null, rangeEnd: null };
+    if (preset === "custom") {
+      return { rangeStart: customStart || latestDate, rangeEnd: customEnd || latestDate };
+    }
+    if (preset === "all") {
+      return { rangeStart: earliestDate, rangeEnd: latestDate };
+    }
+    const days = Number(preset);
+    return { rangeStart: shiftIso(latestDate, -(days - 1)), rangeEnd: latestDate };
+  }, [preset, customStart, customEnd, latestDate, earliestDate]);
 
   const compareRows = useMemo(
-    () => buildCompareRows(metricsRows, account.has_ads, period),
-    [metricsRows, account.has_ads, period]
+    () =>
+      rangeStart && rangeEnd
+        ? buildCompareRowsForRange(metricsRows, account.has_ads, rangeStart, rangeEnd)
+        : [],
+    [metricsRows, account.has_ads, rangeStart, rangeEnd]
   );
+  const windowDays =
+    rangeStart && rangeEnd
+      ? Math.round(
+          (new Date(`${rangeEnd}T00:00:00Z`) - new Date(`${rangeStart}T00:00:00Z`)) / 86400000
+        ) + 1
+      : 30;
   const weeklyVis = useMemo(() => aggregateVisibilityWeekly(visibilityRows), [visibilityRows]);
   const keywordRows = useMemo(() => buildVisibilityKeywordRows(visibilityRows), [visibilityRows]);
 
@@ -213,20 +257,67 @@ export default function AccountDetailClient({ account, metricsRows, visibilityRo
       )}
 
       <div style={{ display: tab === "overview" ? "block" : "none" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+        <div ref={pickerRef} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, position: "relative" }}>
           <p className="section-label" style={{ marginBottom: 0 }}>
-            At a glance — last {period} days vs. previous {period} days
+            At a glance — {rangeStart && rangeEnd ? `${fmtDate(rangeStart)} – ${fmtDate(rangeEnd)}` : "…"}
           </p>
-          <div className="controls" style={{ marginBottom: 0 }}>
-            {[7, 30, 90].map((p) => (
-              <button
-                key={p}
-                className={`filter-btn ${period === p ? "active" : ""}`}
-                onClick={() => setPeriod(p)}
-              >
-                {p}d
-              </button>
-            ))}
+          <div>
+            <button
+              className="btn-secondary"
+              style={{ fontSize: 12 }}
+              onClick={() => setPickerOpen((o) => !o)}
+            >
+              {rangeStart && rangeEnd ? `${fmtDate(rangeStart)} – ${fmtDate(rangeEnd)}` : "Select range"} ▾
+            </button>
+            {pickerOpen && (
+              <div className="date-range-picker">
+                {[
+                  { key: "7", label: "Last 7 Days" },
+                  { key: "30", label: "Last 30 Days" },
+                  { key: "90", label: "Last 90 Days" },
+                  { key: "all", label: "All Time" },
+                  { key: "custom", label: "Custom" },
+                ].map((opt) => (
+                  <button
+                    key={opt.key}
+                    className={`date-range-option ${preset === opt.key ? "active" : ""}`}
+                    onClick={() => {
+                      setPreset(opt.key);
+                      if (opt.key !== "custom") setPickerOpen(false);
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+                {preset === "custom" && (
+                  <div className="date-range-custom">
+                    <label>
+                      Start
+                      <input
+                        type="date"
+                        value={customStart || ""}
+                        min={earliestDate || undefined}
+                        max={latestDate || undefined}
+                        onChange={(e) => setCustomStart(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      End
+                      <input
+                        type="date"
+                        value={customEnd || ""}
+                        min={earliestDate || undefined}
+                        max={latestDate || undefined}
+                        onChange={(e) => setCustomEnd(e.target.value)}
+                      />
+                    </label>
+                    <button className="btn-primary inline" onClick={() => setPickerOpen(false)}>
+                      Apply
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
         {TILE_GROUPS.map((g) => {
@@ -249,7 +340,7 @@ export default function AccountDetailClient({ account, metricsRows, visibilityRo
                     <div className="tile-value">{fmtNum(r.stats.current)}</div>
                     <div className="tile-foot">
                       <DeltaBadge deltaPct={r.vsPrev} goodDir={r.def.goodDir} />
-                      <span className="tile-sub">vs. prev. {period}d</span>
+                      <span className="tile-sub">vs. prev. {windowDays}d</span>
                     </div>
                   </button>
                 ))}
@@ -276,10 +367,10 @@ export default function AccountDetailClient({ account, metricsRows, visibilityRo
             <thead>
               <tr>
                 <th>Metric</th>
-                <th>Last {period} days</th>
-                <th>Prev. {period} days</th>
+                <th>Last {windowDays} days</th>
+                <th>Prev. {windowDays} days</th>
                 <th>vs. prev. period</th>
-                <th>First {period} days (baseline)</th>
+                <th>First {windowDays} days (baseline)</th>
                 <th>vs. baseline (true value)</th>
               </tr>
             </thead>
@@ -319,9 +410,9 @@ export default function AccountDetailClient({ account, metricsRows, visibilityRo
           </table>
         </div>
         <div className="baseline-note">
-          {account.daysActive < period * 2
-            ? `Baseline comparison unlocks once this account has ${period * 2}+ days of history.`
-            : `"vs. baseline" compares the last ${period} days to the client's first ${period} days — the number to use for showing true value delivered.`}
+          {account.daysActive < windowDays * 2
+            ? `Baseline comparison unlocks once this account has ${windowDays * 2}+ days of history.`
+            : `"vs. baseline" compares the last ${windowDays} days to the client's first ${windowDays} days — the number to use for showing true value delivered.`}
         </div>
 
         <div className="chart-label">
