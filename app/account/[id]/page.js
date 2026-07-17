@@ -43,6 +43,24 @@ export default async function AccountPage({ params }) {
 
   if (leadsError) throw leadsError;
 
+  const eventsSince = new Date();
+  eventsSince.setDate(eventsSince.getDate() - 30);
+  const { data: eventRows, error: eventsError } = await supabase
+    .from("ga4_events_daily")
+    .select("event_name, event_count")
+    .eq("account_id", params.id)
+    .gte("date", eventsSince.toISOString().slice(0, 10));
+
+  if (eventsError) throw eventsError;
+
+  const eventTotals = {};
+  for (const row of eventRows ?? []) {
+    eventTotals[row.event_name] = (eventTotals[row.event_name] || 0) + row.event_count;
+  }
+  const ga4Events = Object.entries(eventTotals)
+    .map(([eventName, count]) => ({ eventName, count }))
+    .sort((a, b) => b.count - a.count);
+
   const rows = metricsRows ?? [];
   const { status, reason } = analyzeStatus(rows);
   const daysActive = rows.length
@@ -55,6 +73,7 @@ export default async function AccountPage({ params }) {
       metricsRows={rows}
       visibilityRows={visibilityRows ?? []}
       leadRows={leadRows ?? []}
+      ga4Events={ga4Events}
     />
   );
 }

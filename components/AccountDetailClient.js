@@ -61,7 +61,7 @@ function PresenceCell({ curr, prev }) {
   );
 }
 
-export default function AccountDetailClient({ account, metricsRows, visibilityRows, leadRows = [] }) {
+export default function AccountDetailClient({ account, metricsRows, visibilityRows, leadRows = [], ga4Events = [] }) {
   const [tab, setTab] = useState("overview");
   const [selectedMetric, setSelectedMetric] = useState("sessions");
   const [selectedVisMetric, setSelectedVisMetric] = useState("organic");
@@ -361,6 +361,42 @@ export default function AccountDetailClient({ account, metricsRows, visibilityRo
           Shows the last 50 form submissions (calls not included yet), with obvious
           bot/spam entries already filtered out. "What they need" is pulled from
           whichever form field looks like a message, project detail, or interest field.
+        </div>
+
+        <p className="section-label" style={{ marginTop: 36 }}>
+          GA4 Events (last 30 days)
+        </p>
+        <div className="soft-card">
+          <table className="compare-table">
+            <thead>
+              <tr>
+                <th>Event name</th>
+                <th>Count</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ga4Events.map((e) => (
+                <tr key={e.eventName}>
+                  <td className="metric-label">{e.eventName}</td>
+                  <td>{fmtNum(e.count)}</td>
+                </tr>
+              ))}
+              {ga4Events.length === 0 && (
+                <tr>
+                  <td colSpan={2} className="empty-state">
+                    No GA4 events recorded yet for this account.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="baseline-note">
+          Raw GA4 event counts, whatever this account's site actually tracks —
+          useful for accounts without CallRail, or that track leads/conversions
+          differently (form_submit, click_to_call, generate_lead, file_download,
+          etc). Not folded into Total/Qualified Leads yet since event setups vary
+          too much per client to combine safely.
         </div>
       </div>
 

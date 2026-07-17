@@ -3,6 +3,7 @@ import { createAdminClient } from "../../../../lib/supabase/admin";
 import { refreshAccessToken } from "../../../../lib/google/oauth";
 import {
   fetchGa4SessionsRange,
+  fetchGa4EventsRange,
   fetchGscMetricsRange,
   fetchGbpMetricsRange,
 } from "../../../../lib/google/apis";
@@ -126,6 +127,32 @@ export async function GET(request) {
         }
       } catch (err) {
         warnings.push(`GA4: ${err.message}`);
+      }
+
+      // GA4 event tracking varies a lot per account — some clients have no
+      // CallRail at all and rely entirely on GA4 events (form_submit,
+      // click_to_call, etc.) as their lead signal. Stored separately from the
+      // core metrics since event names aren't consistent across accounts.
+      try {
+        const events = await fetchGa4EventsRange(accessToken, account.ga4_property_id, startDate, endDate);
+        if (events.length) {
+          const { error: eventsError } = await admin
+            .from("ga4_events_daily")
+            .upsert(
+              events.map((e) => ({
+                account_id: account.id,
+                date: e.date,
+                event_name: e.eventName,
+                event_count: e.count,
+              })),
+              { onConflict: "account_id,date,event_name" }
+            );
+          if (eventsError) {
+            warnings.push(`GA4 events storage: ${eventsError.message}`);
+          }
+        }
+      } catch (err) {
+        warnings.push(`GA4 events: ${err.message}`);
       }
     }
 
