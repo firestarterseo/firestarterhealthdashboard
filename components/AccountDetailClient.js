@@ -65,10 +65,11 @@ export default function AccountDetailClient({ account, metricsRows, visibilityRo
   const [tab, setTab] = useState("overview");
   const [selectedMetric, setSelectedMetric] = useState("sessions");
   const [selectedVisMetric, setSelectedVisMetric] = useState("organic");
+  const [period, setPeriod] = useState(30);
 
   const compareRows = useMemo(
-    () => buildCompareRows(metricsRows, account.has_ads),
-    [metricsRows, account.has_ads]
+    () => buildCompareRows(metricsRows, account.has_ads, period),
+    [metricsRows, account.has_ads, period]
   );
   const weeklyVis = useMemo(() => aggregateVisibilityWeekly(visibilityRows), [visibilityRows]);
   const keywordRows = useMemo(() => buildVisibilityKeywordRows(visibilityRows), [visibilityRows]);
@@ -212,7 +213,22 @@ export default function AccountDetailClient({ account, metricsRows, visibilityRo
       )}
 
       <div style={{ display: tab === "overview" ? "block" : "none" }}>
-        <p className="section-label">At a glance — last 30 days vs. previous 30 days</p>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+          <p className="section-label" style={{ marginBottom: 0 }}>
+            At a glance — last {period} days vs. previous {period} days
+          </p>
+          <div className="controls" style={{ marginBottom: 0 }}>
+            {[7, 30, 90].map((p) => (
+              <button
+                key={p}
+                className={`filter-btn ${period === p ? "active" : ""}`}
+                onClick={() => setPeriod(p)}
+              >
+                {p}d
+              </button>
+            ))}
+          </div>
+        </div>
         {TILE_GROUPS.map((g) => {
           const tileRows = g.keys.map((k) => compareRows.find((r) => r.def.key === k)).filter(Boolean);
           if (!tileRows.length) return null;
@@ -230,10 +246,10 @@ export default function AccountDetailClient({ account, metricsRows, visibilityRo
                   >
                     <div className="tile-label">{r.def.label}</div>
                     <div className="tile-source">{r.def.source}</div>
-                    <div className="tile-value">{fmtNum(r.stats.last30)}</div>
+                    <div className="tile-value">{fmtNum(r.stats.current)}</div>
                     <div className="tile-foot">
                       <DeltaBadge deltaPct={r.vsPrev} goodDir={r.def.goodDir} />
-                      <span className="tile-sub">vs. prev. 30d</span>
+                      <span className="tile-sub">vs. prev. {period}d</span>
                     </div>
                   </button>
                 ))}
@@ -260,10 +276,10 @@ export default function AccountDetailClient({ account, metricsRows, visibilityRo
             <thead>
               <tr>
                 <th>Metric</th>
-                <th>Last 30 days</th>
-                <th>Prev. 30 days</th>
+                <th>Last {period} days</th>
+                <th>Prev. {period} days</th>
                 <th>vs. prev. period</th>
-                <th>First 30 days (baseline)</th>
+                <th>First {period} days (baseline)</th>
                 <th>vs. baseline (true value)</th>
               </tr>
             </thead>
@@ -278,14 +294,14 @@ export default function AccountDetailClient({ account, metricsRows, visibilityRo
                     <div className="metric-label">{r.def.label}</div>
                     <div className="metric-source">{r.def.source}</div>
                   </td>
-                  <td>{fmtNum(r.stats.last30)}</td>
-                  <td>{fmtNum(r.stats.prev30)}</td>
+                  <td>{fmtNum(r.stats.current)}</td>
+                  <td>{fmtNum(r.stats.prev)}</td>
                   <td>
                     <DeltaBadge deltaPct={r.vsPrev} goodDir={r.def.goodDir} />
                   </td>
                   <td>
                     {r.stats.hasBaseline ? (
-                      fmtNum(r.stats.first30)
+                      fmtNum(r.stats.first)
                     ) : (
                       <span className="metric-source">building…</span>
                     )}
@@ -303,9 +319,9 @@ export default function AccountDetailClient({ account, metricsRows, visibilityRo
           </table>
         </div>
         <div className="baseline-note">
-          {account.daysActive < 60
-            ? "Baseline comparison unlocks once this account has 60+ days of history."
-            : '"vs. baseline" compares the last 30 days to the client\'s first 30 days — the number to use for showing true value delivered.'}
+          {account.daysActive < period * 2
+            ? `Baseline comparison unlocks once this account has ${period * 2}+ days of history.`
+            : `"vs. baseline" compares the last ${period} days to the client's first ${period} days — the number to use for showing true value delivered.`}
         </div>
 
         <div className="chart-label">
