@@ -62,6 +62,9 @@ export default async function DashboardPage() {
         <img src="/firestarter-logo.webp" alt="Firestarter SEO" className="brand-logo" />
         <span className="brand-tagline">Account Health Dashboard</span>
         <span className="spacer" />
+        <Link href="/admin/connections" className="brand-link">
+          Agency connections
+        </Link>
         <SignOutButton />
       </div>
       <h1>Account Health Dashboard</h1>
@@ -69,9 +72,6 @@ export default async function DashboardPage() {
         High-level view across all client accounts — traffic, search, calls, form submissions, GBP and ads —
         with automatic flags when something goes quiet.
       </p>
-      <div className="page-nav">
-        <Link href="/admin/connections">Agency Google connections</Link>
-      </div>
       <div className="page-actions">
         <Link href="/accounts/new" className="btn-primary inline">
           + Add account
