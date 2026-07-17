@@ -1,5 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { fmtDate } from "../lib/metrics";
 const STATUS_ORDER = { critical: 0, warning: 1, healthy: 2 };
@@ -19,6 +20,7 @@ function Sparkline({ values, color }) {
   );
 }
 export default function AccountsTable({ accounts }) {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const filtered = useMemo(() => {
@@ -63,7 +65,14 @@ export default function AccountsTable({ accounts }) {
               const color =
                 a.status === "critical" ? "#ef4b45" : a.status === "warning" ? "#f27f30" : "#16a34a";
               return (
-                <tr key={a.id} className="clickable">
+                <tr
+                  key={a.id}
+                  className="clickable"
+                  onClick={(e) => {
+                    if (e.target.closest("a")) return;
+                    router.push(`/account/${a.id}`);
+                  }}
+                >
                   <td>
                     <Link href={`/account/${a.id}`}>
                       {a.name} <span className="chevron">›</span>
