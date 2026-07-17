@@ -61,7 +61,7 @@ function PresenceCell({ curr, prev }) {
   );
 }
 
-export default function AccountDetailClient({ account, metricsRows, visibilityRows }) {
+export default function AccountDetailClient({ account, metricsRows, visibilityRows, leadRows = [] }) {
   const [tab, setTab] = useState("overview");
   const [selectedMetric, setSelectedMetric] = useState("sessions");
   const [selectedVisMetric, setSelectedVisMetric] = useState("organic");
@@ -315,6 +315,52 @@ export default function AccountDetailClient({ account, metricsRows, visibilityRo
           <div className="chart-wrap" style={{ height: 300 }}>
             <canvas ref={chartRef} />
           </div>
+        </div>
+
+        <p className="section-label" style={{ marginTop: 36 }}>
+          Recent Leads
+        </p>
+        <div className="soft-card">
+          <table className="compare-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Name</th>
+                <th>Contact</th>
+                <th>What they need</th>
+                <th>Source</th>
+              </tr>
+            </thead>
+            <tbody>
+              {leadRows.map((lead) => (
+                <tr key={lead.id}>
+                  <td>{fmtDate(lead.submitted_at)}</td>
+                  <td className="metric-label">{lead.customer_name || "—"}</td>
+                  <td>
+                    {lead.customer_phone_number && <div>{lead.customer_phone_number}</div>}
+                    {lead.customer_email && (
+                      <div className="metric-source">{lead.customer_email}</div>
+                    )}
+                    {!lead.customer_phone_number && !lead.customer_email && "—"}
+                  </td>
+                  <td style={{ maxWidth: 340 }}>{lead.inquiry || "—"}</td>
+                  <td className="metric-source">{lead.source || "—"}</td>
+                </tr>
+              ))}
+              {leadRows.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="empty-state">
+                    No form leads recorded yet for this account.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="baseline-note">
+          Shows the last 50 form submissions (calls not included yet), with obvious
+          bot/spam entries already filtered out. "What they need" is pulled from
+          whichever form field looks like a message, project detail, or interest field.
         </div>
       </div>
 

@@ -33,6 +33,16 @@ export default async function AccountPage({ params }) {
 
   if (visibilityError) throw visibilityError;
 
+  const { data: leadRows, error: leadsError } = await supabase
+    .from("lead_submissions")
+    .select("*")
+    .eq("account_id", params.id)
+    .eq("is_spam", false)
+    .order("submitted_at", { ascending: false })
+    .limit(50);
+
+  if (leadsError) throw leadsError;
+
   const rows = metricsRows ?? [];
   const { status, reason } = analyzeStatus(rows);
   const daysActive = rows.length
@@ -44,6 +54,7 @@ export default async function AccountPage({ params }) {
       account={{ ...account, status, reason, daysActive }}
       metricsRows={rows}
       visibilityRows={visibilityRows ?? []}
+      leadRows={leadRows ?? []}
     />
   );
 }
