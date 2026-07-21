@@ -276,7 +276,10 @@ export default function NewAccountForm({ initialAccount } = {}) {
     // Pull this account's first week of data right away rather than waiting for tomorrow's
     // nightly sync — fire-and-forget so a slow GA4/GSC/CallRail response doesn't block the
     // redirect; the account page will just show empty tiles until it lands a moment later.
-    fetch(`/api/cron/sync-metrics?accountId=${data.id}&days=7`).catch(() => {});
+    // 90 days rather than just a first week — enough to clear the 60-day baseline
+    // threshold immediately, since the underlying GA4/GSC/CallRail data already
+    // exists this far back regardless of when the account was added here.
+    fetch(`/api/cron/sync-metrics?accountId=${data.id}&days=90`).catch(() => {});
 
     router.push(`/account/${data.id}`);
     router.refresh();

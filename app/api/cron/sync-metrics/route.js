@@ -3,11 +3,12 @@ import { createAdminClient } from "../../../../lib/supabase/admin";
 import { refreshAccessToken } from "../../../../lib/google/oauth";
 import {
   fetchGa4SessionsRange,
+  fetchGa4EventsRange,
   fetchGscMetricsRange,
   fetchGbpMetricsRange,
   fetchAdsMetricsRange,
 } from "../../../../lib/google/apis";
-import { fetchDailyCallMetrics, fetchDailyFormMetrics } from "../../../../lib/callrail/api";
+import { fetchDailyCallMetrics, fetchDailyFormMetrics, fetchFormLeadDetails } from "../../../../lib/callrail/api";
 
 // Unified daily metrics sync: pulls GA4 sessions, Search Console clicks/impressions/position,
 // Business Profile calls/direction requests, and CallRail calls/form submissions for every
@@ -130,6 +131,32 @@ export async function GET(request) {
       } catch (err) {
         warnings.push(`GA4: ${err.message}`);
       }
+
+      // GA4 event tracking varies a lot per account — some clients have no
+      // CallRail at all and rely entirely on GA4 events (form_submit,
+      // click_to_call, etc.) as their lead signal. Stored separately from the
+      // core metrics since event names aren't consistent across accounts.
+      try {
+        const events = await fetchGa4EventsRange(accessToken, account.ga4_property_id, startDate, endDate);
+        if (events.length) {
+          const { error: eventsError } = await admin
+            .from("ga4_events_daily")
+            .upsert(
+              events.map((e) => ({
+                account_id: account.id,
+                date: e.date,
+                event_name: e.eventName,
+                event_count: e.count,
+              })),
+              { onConflict: "account_id,date,event_name" }
+            );
+          if (eventsError) {
+            warnings.push(`GA4 events storage: ${eventsError.message}`);
+          }
+        }
+      } catch (err) {
+        warnings.push(`GA4 events: ${err.message}`);
+      }
     }
 
     if (account.gsc_site_url && accessToken) {
@@ -177,7 +204,7 @@ export async function GET(request) {
       : null;
     if (callrailConn?.api_key && account.callrail_account_id && account.callrail_company_id) {
       try {
-        const [calls, forms] = await Promise.all([
+        const [calls, forms, leadDetails] = await Promise.all([
           fetchDailyCallMetrics(
             callrailConn.api_key,
             account.callrail_account_id,
@@ -192,6 +219,13 @@ export async function GET(request) {
             startDate,
             endDate
           ),
+          fetchFormLeadDetails(
+            callrailConn.api_key,
+            account.callrail_account_id,
+            account.callrail_company_id,
+            startDate,
+            endDate
+          ),
         ]);
         for (const [date, value] of Object.entries(calls)) {
           const b = bucket(date);
@@ -200,6 +234,21 @@ export async function GET(request) {
         }
         for (const [date, value] of Object.entries(forms)) {
           bucket(date).callrail_forms = value;
+        }
+
+        // Store individual lead detail for the "Recent Leads" section — upsert on
+        // CallRail's own submission id so re-syncing the same date range doesn't
+        // create duplicates.
+        if (leadDetails.length) {
+          const { error: leadsError } = await admin
+            .from("lead_submissions")
+            .upsert(
+              leadDetails.map((l) => ({ ...l, account_id: account.id })),
+              { onConflict: "id" }
+            );
+          if (leadsError) {
+            warnings.push(`Lead detail storage: ${leadsError.message}`);
+          }
         }
       } catch (err) {
         warnings.push(`CallRail: ${err.message}`);

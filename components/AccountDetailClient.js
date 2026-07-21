@@ -8,7 +8,7 @@ import {
   METRIC_DB_COLUMN,
   TILE_GROUPS,
   VIS_PLATFORM_DEFS,
-  buildCompareRows,
+  buildCompareRowsForRange,
   fmtNum,
   fmtDate,
   aggregateVisibilityWeekly,
@@ -61,15 +61,60 @@ function PresenceCell({ curr, prev }) {
   );
 }
 
-export default function AccountDetailClient({ account, metricsRows, visibilityRows }) {
+export default function AccountDetailClient({ account, metricsRows, visibilityRows, leadRows = [], ga4Events = [] }) {
   const [tab, setTab] = useState("overview");
   const [selectedMetric, setSelectedMetric] = useState("sessions");
   const [selectedVisMetric, setSelectedVisMetric] = useState("organic");
 
+  const [preset, setPreset] = useState("30");
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerRef = useRef(null);
+  const earliestDate = metricsRows.length ? metricsRows[0].date : null;
+  const latestDate = metricsRows.length ? metricsRows[metricsRows.length - 1].date : null;
+  const [customStart, setCustomStart] = useState(latestDate);
+  const [customEnd, setCustomEnd] = useState(latestDate);
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target)) {
+        setPickerOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  function shiftIso(dateStr, days) {
+    const d = new Date(`${dateStr}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.toISOString().slice(0, 10);
+  }
+
+  const { rangeStart, rangeEnd } = useMemo(() => {
+    if (!latestDate) return { rangeStart: null, rangeEnd: null };
+    if (preset === "custom") {
+      return { rangeStart: customStart || latestDate, rangeEnd: customEnd || latestDate };
+    }
+    if (preset === "all") {
+      return { rangeStart: earliestDate, rangeEnd: latestDate };
+    }
+    const days = Number(preset);
+    return { rangeStart: shiftIso(latestDate, -(days - 1)), rangeEnd: latestDate };
+  }, [preset, customStart, customEnd, latestDate, earliestDate]);
+
   const compareRows = useMemo(
-    () => buildCompareRows(metricsRows, account.has_ads),
-    [metricsRows, account.has_ads]
+    () =>
+      rangeStart && rangeEnd
+        ? buildCompareRowsForRange(metricsRows, account.has_ads, rangeStart, rangeEnd)
+        : [],
+    [metricsRows, account.has_ads, rangeStart, rangeEnd]
   );
+  const windowDays =
+    rangeStart && rangeEnd
+      ? Math.round(
+          (new Date(`${rangeEnd}T00:00:00Z`) - new Date(`${rangeStart}T00:00:00Z`)) / 86400000
+        ) + 1
+      : 30;
   const weeklyVis = useMemo(() => aggregateVisibilityWeekly(visibilityRows), [visibilityRows]);
   const keywordRows = useMemo(() => buildVisibilityKeywordRows(visibilityRows), [visibilityRows]);
 
@@ -212,7 +257,69 @@ export default function AccountDetailClient({ account, metricsRows, visibilityRo
       )}
 
       <div style={{ display: tab === "overview" ? "block" : "none" }}>
-        <p className="section-label">At a glance — last 30 days vs. previous 30 days</p>
+        <div ref={pickerRef} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, position: "relative" }}>
+          <p className="section-label" style={{ marginBottom: 0 }}>
+            At a glance — {rangeStart && rangeEnd ? `${fmtDate(rangeStart)} – ${fmtDate(rangeEnd)}` : "…"}
+          </p>
+          <div>
+            <button
+              className="btn-secondary"
+              style={{ fontSize: 12 }}
+              onClick={() => setPickerOpen((o) => !o)}
+            >
+              {rangeStart && rangeEnd ? `${fmtDate(rangeStart)} – ${fmtDate(rangeEnd)}` : "Select range"} ▾
+            </button>
+            {pickerOpen && (
+              <div className="date-range-picker">
+                {[
+                  { key: "7", label: "Last 7 Days" },
+                  { key: "30", label: "Last 30 Days" },
+                  { key: "90", label: "Last 90 Days" },
+                  { key: "all", label: "All Time" },
+                  { key: "custom", label: "Custom" },
+                ].map((opt) => (
+                  <button
+                    key={opt.key}
+                    className={`date-range-option ${preset === opt.key ? "active" : ""}`}
+                    onClick={() => {
+                      setPreset(opt.key);
+                      if (opt.key !== "custom") setPickerOpen(false);
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+                {preset === "custom" && (
+                  <div className="date-range-custom">
+                    <label>
+                      Start
+                      <input
+                        type="date"
+                        value={customStart || ""}
+                        min={earliestDate || undefined}
+                        max={latestDate || undefined}
+                        onChange={(e) => setCustomStart(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      End
+                      <input
+                        type="date"
+                        value={customEnd || ""}
+                        min={earliestDate || undefined}
+                        max={latestDate || undefined}
+                        onChange={(e) => setCustomEnd(e.target.value)}
+                      />
+                    </label>
+                    <button className="btn-primary inline" onClick={() => setPickerOpen(false)}>
+                      Apply
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
         {TILE_GROUPS.map((g) => {
           const tileRows = g.keys.map((k) => compareRows.find((r) => r.def.key === k)).filter(Boolean);
           if (!tileRows.length) return null;
@@ -230,10 +337,10 @@ export default function AccountDetailClient({ account, metricsRows, visibilityRo
                   >
                     <div className="tile-label">{r.def.label}</div>
                     <div className="tile-source">{r.def.source}</div>
-                    <div className="tile-value">{fmtNum(r.stats.last30)}</div>
+                    <div className="tile-value">{fmtNum(r.stats.current)}</div>
                     <div className="tile-foot">
                       <DeltaBadge deltaPct={r.vsPrev} goodDir={r.def.goodDir} />
-                      <span className="tile-sub">vs. prev. 30d</span>
+                      <span className="tile-sub">vs. prev. {windowDays}d</span>
                     </div>
                   </button>
                 ))}
@@ -260,10 +367,10 @@ export default function AccountDetailClient({ account, metricsRows, visibilityRo
             <thead>
               <tr>
                 <th>Metric</th>
-                <th>Last 30 days</th>
-                <th>Prev. 30 days</th>
+                <th>Last {windowDays} days</th>
+                <th>Prev. {windowDays} days</th>
                 <th>vs. prev. period</th>
-                <th>First 30 days (baseline)</th>
+                <th>First {windowDays} days (baseline)</th>
                 <th>vs. baseline (true value)</th>
               </tr>
             </thead>
@@ -278,14 +385,14 @@ export default function AccountDetailClient({ account, metricsRows, visibilityRo
                     <div className="metric-label">{r.def.label}</div>
                     <div className="metric-source">{r.def.source}</div>
                   </td>
-                  <td>{fmtNum(r.stats.last30)}</td>
-                  <td>{fmtNum(r.stats.prev30)}</td>
+                  <td>{fmtNum(r.stats.current)}</td>
+                  <td>{fmtNum(r.stats.prev)}</td>
                   <td>
                     <DeltaBadge deltaPct={r.vsPrev} goodDir={r.def.goodDir} />
                   </td>
                   <td>
                     {r.stats.hasBaseline ? (
-                      fmtNum(r.stats.first30)
+                      fmtNum(r.stats.first)
                     ) : (
                       <span className="metric-source">building…</span>
                     )}
@@ -303,9 +410,9 @@ export default function AccountDetailClient({ account, metricsRows, visibilityRo
           </table>
         </div>
         <div className="baseline-note">
-          {account.daysActive < 60
-            ? "Baseline comparison unlocks once this account has 60+ days of history."
-            : '"vs. baseline" compares the last 30 days to the client\'s first 30 days — the number to use for showing true value delivered.'}
+          {account.daysActive < windowDays * 2
+            ? `Baseline comparison unlocks once this account has ${windowDays * 2}+ days of history.`
+            : `"vs. baseline" compares the last ${windowDays} days to the client's first ${windowDays} days — the number to use for showing true value delivered.`}
         </div>
 
         <div className="chart-label">
@@ -315,6 +422,88 @@ export default function AccountDetailClient({ account, metricsRows, visibilityRo
           <div className="chart-wrap" style={{ height: 300 }}>
             <canvas ref={chartRef} />
           </div>
+        </div>
+
+        <p className="section-label" style={{ marginTop: 36 }}>
+          Recent Leads
+        </p>
+        <div className="soft-card">
+          <table className="compare-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Name</th>
+                <th>Contact</th>
+                <th>What they need</th>
+                <th>Source</th>
+              </tr>
+            </thead>
+            <tbody>
+              {leadRows.map((lead) => (
+                <tr key={lead.id}>
+                  <td>{fmtDate(lead.submitted_at)}</td>
+                  <td className="metric-label">{lead.customer_name || "—"}</td>
+                  <td>
+                    {lead.customer_phone_number && <div>{lead.customer_phone_number}</div>}
+                    {lead.customer_email && (
+                      <div className="metric-source">{lead.customer_email}</div>
+                    )}
+                    {!lead.customer_phone_number && !lead.customer_email && "—"}
+                  </td>
+                  <td style={{ maxWidth: 340 }}>{lead.inquiry || "—"}</td>
+                  <td className="metric-source">{lead.source || "—"}</td>
+                </tr>
+              ))}
+              {leadRows.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="empty-state">
+                    No form leads recorded yet for this account.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="baseline-note">
+          Shows the last 50 form submissions (calls not included yet), with obvious
+          bot/spam entries already filtered out. "What they need" is pulled from
+          whichever form field looks like a message, project detail, or interest field.
+        </div>
+
+        <p className="section-label" style={{ marginTop: 36 }}>
+          GA4 Events (last 30 days)
+        </p>
+        <div className="soft-card">
+          <table className="compare-table">
+            <thead>
+              <tr>
+                <th>Event name</th>
+                <th>Count</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ga4Events.map((e) => (
+                <tr key={e.eventName}>
+                  <td className="metric-label">{e.eventName}</td>
+                  <td>{fmtNum(e.count)}</td>
+                </tr>
+              ))}
+              {ga4Events.length === 0 && (
+                <tr>
+                  <td colSpan={2} className="empty-state">
+                    No GA4 events recorded yet for this account.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="baseline-note">
+          Raw GA4 event counts, whatever this account's site actually tracks —
+          useful for accounts without CallRail, or that track leads/conversions
+          differently (form_submit, click_to_call, generate_lead, file_download,
+          etc). Not folded into Total/Qualified Leads yet since event setups vary
+          too much per client to combine safely.
         </div>
       </div>
 
