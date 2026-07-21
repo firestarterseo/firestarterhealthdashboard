@@ -443,7 +443,8 @@ export default function NewAccountForm({ initialAccount } = {}) {
             placeholder="123-456-7890"
           />
           <span className="form-hint">
-            Google Ads dropdown isn't available yet — it needs an approved developer token first. Manual entry for now.
+            No Google Ads picker yet — enter the customer ID manually (find it in the Ads UI,
+            top-right of any account). Check "Running Google Ads" below to sync spend/conversions.
           </span>
         </div>
       </div>

@@ -5,6 +5,7 @@ import {
   fetchGa4SessionsRange,
   fetchGscMetricsRange,
   fetchGbpMetricsRange,
+  fetchAdsMetricsRange,
 } from "../../../../lib/google/apis";
 import { fetchDailyCallMetrics, fetchDailyFormMetrics } from "../../../../lib/callrail/api";
 
@@ -100,6 +101,8 @@ export async function GET(request) {
           callrail_forms: null,
           gbp_calls: null,
           gbp_direction_requests: null,
+          ads_spend: null,
+          ads_conversions: null,
           _qualifiedCalls: 0,
         };
       }
@@ -156,6 +159,19 @@ export async function GET(request) {
       }
     }
 
+    if (account.has_ads && account.ads_customer_id && accessToken) {
+      try {
+        const ads = await fetchAdsMetricsRange(accessToken, account.ads_customer_id, startDate, endDate);
+        for (const [date, value] of Object.entries(ads)) {
+          const b = bucket(date);
+          b.ads_spend = value.spend;
+          b.ads_conversions = value.conversions;
+        }
+      } catch (err) {
+        warnings.push(`Google Ads: ${err.message}`);
+      }
+    }
+
     const callrailConn = account.callrail_connection_id
       ? callrailConnById[account.callrail_connection_id]
       : null;
@@ -208,6 +224,8 @@ export async function GET(request) {
         callrail_forms: m.callrail_forms,
         gbp_calls: m.gbp_calls,
         gbp_direction_requests: m.gbp_direction_requests,
+        ads_spend: m.ads_spend,
+        ads_conversions: m.ads_conversions,
         total_leads: callrailCalls + callrailForms + gbpCalls,
         qualified_leads: (m._qualifiedCalls || 0) + callrailForms,
       };
